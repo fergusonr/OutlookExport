@@ -46,8 +46,18 @@ namespace OutlookExport
 				PrintContacts(folder, path);
 			}
 
-			foreach (Outlook.ContactItem contact in contacts.Items)
+			foreach (var obj in contacts.Items)
 			{
+				Outlook.ContactItem contact = obj as Outlook.ContactItem;
+
+				if (contact == null)
+					continue;
+
+				if (string.IsNullOrEmpty(contact.BusinessTelephoneNumber)
+				&& string.IsNullOrEmpty(contact.MobileTelephoneNumber)
+				&& string.IsNullOrEmpty(contact.MobileTelephoneNumber))
+					continue;
+
 				Console.WriteLine(contact.FullName);
 
 				var file = new StreamWriter(Path.Combine(path, contact.FullName.Replace('/',',') + ".vcf"));
