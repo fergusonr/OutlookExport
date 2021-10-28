@@ -4,13 +4,19 @@
 //
 
 using System;
+using System.Linq;
 using System.IO;
 using Outlook = Microsoft.Office.Interop.Outlook;
+using System.Collections.Generic;
 
 namespace OutlookExport
 {
-	class Program
+	static class Program
 	{
+		static IEnumerable<string> ignoreCat;
+		static bool devnull;
+		static bool phoneOnly;
+
 		static void Main(string[] args)
 		{
 			Outlook.Application outlook = null;
@@ -28,9 +34,17 @@ namespace OutlookExport
 
 			Outlook.MAPIFolder contacts = ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderContacts);
 
-			var path = args.Length == 1 ? args[0] : "";
+			// args
+			var path = args.Arg("path");
+			var tmp = args.Arg("ignore");
 
-			if (!Directory.Exists(path))
+			if(tmp != null)
+				ignoreCat = tmp.Split(',').Select(x => x.Trim());
+
+			devnull = args.ArgBool("devnull");
+			phoneOnly = args.ArgBool("phoneonly");
+
+			if (path != null && !Directory.Exists(path))
 				Directory.CreateDirectory(path);
 
 			PrintContacts(contacts, path);
@@ -53,14 +67,25 @@ namespace OutlookExport
 				if (contact == null)
 					continue;
 
-				if (string.IsNullOrEmpty(contact.BusinessTelephoneNumber)
-				&& string.IsNullOrEmpty(contact.MobileTelephoneNumber)
+				if (phoneOnly
+				&& string.IsNullOrEmpty(contact.BusinessTelephoneNumber)
+				&& string.IsNullOrEmpty(contact.HomeTelephoneNumber)
 				&& string.IsNullOrEmpty(contact.MobileTelephoneNumber))
 					continue;
 
+				if (ignoreCat != null && contact.Categories != null)
+				{
+					var cats = contact.Categories.Split(',').Select(x => x.Trim());
+
+					if (cats.Intersect(ignoreCat, EqualityComparer<string>.Default).Any())
+						continue;
+				}
+
 				Console.WriteLine(contact.FullName);
 
-				var file = new StreamWriter(Path.Combine(path, contact.FullName.Replace('/',',') + ".vcf"));
+				var file = devnull ? 
+					new StreamWriter(Stream.Null) 
+				  : new StreamWriter(Path.Combine(path, contact.FullName.Replace('/',',') + ".vcf"));
 
 				file.WriteLine(
 $@"BEGIN:VCARD
@@ -83,5 +108,21 @@ END:VCARD");
 				file.Close();
 			}
 		}
+	}
+
+	static class ArgsParse
+	{
+		internal static string Arg(this string[] args, string name)
+		{
+			var index = Array.IndexOf(args, $"-{name}");
+			return index != -1 && index + 1 < args.Length ? args[index + 1] : null;
+		}
+
+		internal static bool ArgBool(this string[] args, string name)
+		{
+			var index = Array.IndexOf(args, $"-{name}");
+			return index != -1 ? true : false;
+		}
+
 	}
 }
