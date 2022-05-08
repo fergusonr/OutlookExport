@@ -1,6 +1,6 @@
 ﻿//
-// https://tools.ietf.org/html/rfc6350
-//
+// vCard	 https://tools.ietf.org/html/rfc6350
+// vCalendar https://datatracker.ietf.org/doc/html/rfc5545
 //
 
 using System;
@@ -16,6 +16,7 @@ namespace OutlookExport
 		static IEnumerable<string> ignoreCat;
 		static bool devnull;
 		static bool phoneOnly;
+		static bool forwardOnlyCalendars = true;
 
 		static void Main(string[] args)
 		{
@@ -33,9 +34,9 @@ namespace OutlookExport
 			var ns = outlook.GetNamespace("MAPI");
 
 			Outlook.MAPIFolder contacts = ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderContacts);
+			Outlook.MAPIFolder calendar = ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderCalendar);
 
 			// args
-			var path = args.Arg("path");
 			var tmp = args.Arg("ignore");
 
 			if(tmp != null)
@@ -43,21 +44,25 @@ namespace OutlookExport
 
 			devnull = args.ArgBool("devnull");
 			phoneOnly = args.ArgBool("phoneonly");
+			forwardOnlyCalendars = args.ArgBool("forward");
 
-			if (path != null && !Directory.Exists(path))
-				Directory.CreateDirectory(path);
-
-			PrintContacts(contacts, path);
+			PrintContacts(contacts);
+			PrintCalendar(calendar);
 		}
 
-		static void PrintContacts(Outlook.MAPIFolder contacts, string path)
+		static void PrintContacts(Outlook.MAPIFolder contacts)
 		{
+			const string dirName = "Contacts";
+
+			if (!Directory.Exists(dirName))
+				Directory.CreateDirectory(dirName);
+
 			foreach (Outlook.MAPIFolder folder in contacts.Folders)
 			{
 				if (folder.Name.Equals("archive", StringComparison.CurrentCultureIgnoreCase))
 					continue;
 
-				PrintContacts(folder, path);
+				PrintContacts(folder);
 			}
 
 			foreach (var obj in contacts.Items)
@@ -85,13 +90,13 @@ namespace OutlookExport
 
 				var file = devnull ? 
 					new StreamWriter(Stream.Null) 
-				  : new StreamWriter(Path.Combine(path, contact.FullName.Replace('/',',') + ".vcf"));
+				  : new StreamWriter(Path.Combine(dirName, contact.FullName.StripIllegalChars() + ".vcf"));
 
 				file.WriteLine(
 $@"BEGIN:VCARD
 VERSION:3.0
-N: {contact.LastName};{contact.FirstName}
-FN: {contact.FullName}
+N:{contact.LastName};{contact.FirstName}
+FN:{contact.FullName}
 TEL;work;voice:{contact.BusinessTelephoneNumber}
 TEL;home;voice:{contact.HomeTelephoneNumber}
 TEL;cell;voice:{contact.MobileTelephoneNumber}
@@ -101,10 +106,59 @@ EMAIL:{contact.Email1Address}
 EMAIL2:{contact.Email2Address}
 EMAIL3:{contact.Email3Address}
 NOTE:{contact.Body?.Replace(Environment.NewLine, ";")}
+CATEGORIES:{contact.Categories}
 URL:{contact.WebPage}
-REV:{contact.LastModificationTime.ToString("yyyyMMddThhmmssZ")}
+REV:{contact.LastModificationTime:yyyyMMddThhmmssZ}
 END:VCARD");
 
+				file.Close();
+			}
+		}
+
+		static void PrintCalendar(Outlook.MAPIFolder calanders)
+		{
+			const string dirName = "Calendar";
+
+			if (!Directory.Exists(dirName))
+				Directory.CreateDirectory(dirName);
+
+			foreach (Outlook.MAPIFolder folder in calanders.Folders)
+			{
+				if (folder.Name.Equals("archive", StringComparison.CurrentCultureIgnoreCase))
+					continue;
+
+				PrintCalendar(folder);
+			}
+
+			foreach (var obj in calanders.Items)
+			{
+				Outlook.AppointmentItem calendar = obj as Outlook.AppointmentItem;
+
+				if (calendar == null)
+					continue;
+
+				if (calendar.Start < DateTime.Now && !calendar.IsRecurring)
+					continue;
+
+				Console.WriteLine(calendar.Subject);
+
+				var file = devnull ?
+				new StreamWriter(Stream.Null)
+			  : new StreamWriter(Path.Combine(dirName, calendar.Subject.StripIllegalChars() + ".vcs"));
+
+				file.WriteLine(
+$@"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//OutlookExport v1.0//EN
+BEGIN:VEVENT
+DTSTAMP:{calendar.CreationTime:yyyyMMddThhmmssZ}
+DTSTART:{calendar.Start:yyyyMMddThhmmssZ}
+DTEND:{calendar.End:yyyyMMddThhmmssZ}
+CLASS:{calendar.Sensitivity}
+CATEGORIES:{calendar.Categories}
+SUMMARY:{calendar.Subject}
+END:VEVENT
+END:VCALENDAR");
 				file.Close();
 			}
 		}
@@ -124,5 +178,20 @@ END:VCARD");
 			return index != -1 ? true : false;
 		}
 
+	}
+
+	static class StringExtensions
+	{
+		internal static string StripIllegalChars(this string name)
+		{
+			char[] illegal = new char[] { '\\','/',':','*', '?', '"','<','>','|' };
+
+			string retValue = name;
+
+			foreach(var c in illegal)
+				retValue = retValue.Replace(c, '_');
+
+			return retValue;
+		}
 	}
 }
