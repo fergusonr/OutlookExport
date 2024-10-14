@@ -1,5 +1,5 @@
 
-# Outlook contacts to vCards
+# Bulk export Outlook calendar/ contacts
 
-Export Microsoft Outlook contacts to vCard files. 
-Suitable for importing into Andriod contacts
+Bulk exports Microsoft Outlook contacts and calendars to vCard / vCalendar files. 
+Suitable for importing into Andriod
